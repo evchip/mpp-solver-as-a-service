@@ -3,62 +3,83 @@
 export default function Home() {
   return (
     <main style={{ maxWidth: 640, margin: "80px auto", padding: "0 24px" }}>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>Kalshi on MPP</h1>
+      <h1 style={{ fontSize: 24, marginBottom: 8 }}>Prediction Markets on MPP</h1>
       <p style={{ color: "#888", marginBottom: 40, fontSize: 14 }}>
-        Prediction market data for AI agents. Pay per request with USDC on Tempo.
+        Search prediction markets and buy positions cross-chain. Pay with USDC on Tempo.
       </p>
 
       <section style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 14, color: "#aaa", marginBottom: 12 }}>Endpoints</h2>
+        <h2 style={{ fontSize: 14, color: "#aaa", marginBottom: 12 }}>Data Endpoints</h2>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Endpoint
+            method="GET"
+            path="/api/polymarket?q=bitcoin"
+            cost="0.10"
+            description="Search Polymarket markets"
+          />
           <Endpoint
             method="GET"
             path="/api/markets?q=bitcoin"
             cost="0.10"
-            description="Search markets by keyword"
+            description="Search Kalshi markets"
           />
           <Endpoint
             method="GET"
             path="/api/market?ticker=KXBTC..."
             cost="0.05"
-            description="Get a single market's odds, volume, close time"
-          />
-          <Endpoint
-            method="GET"
-            path="/api/kalshi-markets"
-            cost="0.05"
-            description="List trending markets"
+            description="Single Kalshi market: odds, volume, close time"
           />
         </div>
       </section>
 
       <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 14, color: "#aaa", marginBottom: 12 }}>
+          Solver
+          <span style={{ color: "#f59e0b", fontSize: 11, marginLeft: 8 }}>cross-chain</span>
+        </h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Endpoint
+            method="POST"
+            path="/api/buy-position"
+            cost="0.50 + position"
+            description="Pay on Tempo, receive a Polymarket position on Polygon"
+          />
+        </div>
+        <p style={{ color: "#555", fontSize: 12, marginTop: 12 }}>
+          The solver buys CTF tokens on Polymarket and transfers them to your Polygon address.
+          Currently trusted (our server). Future: trustless via Tempo's enshrined escrow precompile.
+        </p>
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 14, color: "#aaa", marginBottom: 12 }}>Usage</h2>
         <pre style={{ background: "#111", padding: 16, borderRadius: 8, fontSize: 12, overflow: "auto" }}>
-{`# With tempo CLI
-tempo request -t -X GET \\
-  "https://your-host.com/api/markets?q=bitcoin"
+{`# Search Polymarket
+tempo request -t -X GET "https://HOST/api/polymarket?q=bitcoin"
 
-# With mppx (TypeScript)
-import { Mppx, tempo } from 'mppx/client'
-Mppx.create({ methods: [tempo({ account })] })
-const res = await fetch('/api/markets?q=bitcoin')
-
-# With mpp (Rust)
-let client = ClientBuilder::new(reqwest::Client::new())
-    .with(PaymentMiddleware::new(provider))
-    .build();
-let res = client.get("/api/markets?q=bitcoin").send().await?;`}
+# Buy a position (pay on Tempo, receive on Polygon)
+tempo request -t -X POST --json '{
+  "token_id": "71321...",
+  "side": "YES",
+  "amount_usd": 10,
+  "recipient_polygon": "0xYOUR_POLYGON_ADDRESS"
+}' "https://HOST/api/buy-position"`}
         </pre>
       </section>
 
       <section>
-        <h2 style={{ fontSize: 14, color: "#aaa", marginBottom: 12 }}>Protocol</h2>
-        <p style={{ color: "#666", fontSize: 13 }}>
-          All endpoints return HTTP 402 with an MPP challenge when called without payment.
-          Compatible with any MPP client (tempo CLI, mppx, pympp, mpp-rs).
-          Payments settle on Tempo mainnet in USDC.
-        </p>
+        <h2 style={{ fontSize: 14, color: "#aaa", marginBottom: 12 }}>How it works</h2>
+        <pre style={{ background: "#111", padding: 16, borderRadius: 8, fontSize: 12, overflow: "auto", color: "#888" }}>
+{`Tempo (payment)              Polygon (execution)
+─────────────────            ──────────────────
+User pays USDC  ──────────>  Solver buys CTF tokens
+via MPP                      on Polymarket CLOB
+                <──────────  Solver transfers CTF
+                             to user's address
+
+Trust: solver is our server (hackathon)
+Future: enshrined escrow precompile on Tempo`}
+        </pre>
       </section>
     </main>
   );
