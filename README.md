@@ -1,44 +1,33 @@
-# Agent Prepaid Card — Tempo x Kalshi Hackathon
+# Kalshi on MPP
 
-**Hackathon:** Tempo x Stripe HIIT Hackathon · March 19, 2026 · SF + Virtual
-**Concept:** Give an AI agent a protocol-native spending limit on Tempo. Watch it autonomously buy market data and execute a Kalshi prediction market trade. When the limit hits zero, it literally cannot spend more -- enforced at the Tempo protocol level, not in application code.
+Prediction market data for AI agents. Pay per request with USDC on Tempo.
+
+The first prediction market service on the [MPP marketplace](https://mpp.dev/services). Any MPP client (tempo CLI, mppx, pympp, mpp-rs) can search Kalshi markets and get odds.
 
 ---
 
-## What's Built
+## Endpoints
 
+| Method | Path | Cost | Description |
+|--------|------|------|-------------|
+| GET | `/api/markets?q=bitcoin&limit=10` | 0.10 USDC | Search markets by keyword |
+| GET | `/api/market?ticker=KXBTC-...` | 0.05 USDC | Single market odds, volume, close time |
+| GET | `/api/kalshi-markets?category=...&limit=20` | 0.05 USDC | List trending/featured markets |
+
+All endpoints return HTTP 402 with an MPP challenge when called without payment.
+
+## Try it
+
+```bash
+# Search for bitcoin markets
+tempo request -t -X GET "https://YOUR_HOST/api/markets?q=bitcoin"
+
+# Get a specific market
+tempo request -t -X GET "https://YOUR_HOST/api/market?ticker=KXBTC-26MAR28-90000"
+
+# Dry run (check cost without paying)
+tempo request -t --dry-run -X GET "https://YOUR_HOST/api/markets?q=bitcoin"
 ```
-Browser UI (Next.js)
-    ↓ user grants Access Key (USDC spending limit, 1hr expiry)
-/api/agent  ←  orchestrator with mppx: fetch() auto-pays 402 challenges
-    │
-    ├── /api/kalshi-markets          ← OUR MPP service (1 USDC)
-    │   (Kalshi market data)
-    │
-    ├── anthropic.mpp.tempo.xyz      ← MARKETPLACE service (pay-per-token)
-    │   (Claude evaluates trade)
-    │
-    └── Kalshi Sandbox API           ← trade execution (direct)
-```
-
-The agent shops across the **live MPP marketplace** (50+ services) and our custom endpoint.
-No API keys needed for Claude -- it pays per call via MPP.
-
-**Tempo primitives used:**
-- **Access Keys** (AccountKeychain precompile `0xAAAAA...`) -- protocol-native spending limits per TIP-20 token
-- **USDC** -- native stablecoin on Tempo mainnet
-- **Payment lanes** -- guaranteed blockspace for payment txs even under load
-
-**Payment protocol:** MPP (Machine Payments Protocol) via `mppx` SDK (by wevm)
-- Server: `mpp.charge({ amount: "1" })` on our Kalshi endpoint
-- Client: `Mppx.create()` then `fetch()` auto-pays any 402 -- ours or third-party
-
-**MPP marketplace services the agent can call:**
-- `anthropic.mpp.tempo.xyz` -- Claude (used for trade evaluation)
-- `agents.allium.so` -- real-time token prices, wallet balances, PnL
-- `api.dune.com` -- SQL queries on blockchain data
-- `exa.mpp.tempo.xyz` -- AI-powered web search
-- Full directory: `tempo wallet -t services --search <query>`
 
 ---
 
@@ -46,125 +35,84 @@ No API keys needed for Claude -- it pays per call via MPP.
 
 ```bash
 cp .env.example .env.local
-# Fill in all values -- see comments in .env.example
-
 bun install
 bun dev
 ```
 
-### Accounts you need before hackathon day
+### Kalshi API credentials
 
-| Account | Where | What for |
-|---------|-------|----------|
-| Tempo mainnet wallet | MetaMask + add chain 4217 | User wallet to grant Access Key |
-| Agent throwaway key | `cast wallet new` | Signs Tempo payment txs |
-| Kalshi account | kalshi.com -> Settings -> API | Sandbox trading |
-| ~~Anthropic API key~~ | ~~not needed~~ | Claude called via MPP marketplace (pay-per-call) |
+Kalshi uses ECDSA P-256 signed request headers. You need:
+1. Sign up at kalshi.com
+2. Settings -> API -> generate key pair
+3. Add to `.env.local`
 
-### Get mainnet USDC
-- Bridge USDC from Base/Ethereum via Stargate or Across
-- Or get USDC from the Tempo faucet if one is available at launch
+### Deploy
 
-### Install Tempo agent skill (gives Claude SDK knowledge)
-```bash
-bunx skills add tempoxyz/agent-skills
-```
-
-### MPP (mppx) -- how it works
-
-`mppx` handles all payment logic. No custom verification code needed.
-
-**Server** (each route handler):
-```typescript
-const mpp = await createMppServer(SERVICE_WALLET);
-const payment = await mpp.charge({ amount: "1" })(req);
-if (payment.status === 402) return payment.challenge;
-return payment.withReceipt(Response.json({ data }));
-```
-
-**Client** (agent orchestrator, one-time init):
-```typescript
-Mppx.create({ methods: [tempo({ account: privateKeyToAccount('0x...') })] });
-// fetch() now auto-handles 402 challenges. Done.
-```
+For the hackathon: deploy to Railway, Fly.io, or Vercel so other agents can reach it.
 
 ---
 
-## Project Plan & TODOs
+## Project Plan
 
 Priority: **P0** = must ship, **P1** = should ship, **P2** = stretch
 
-### Milestone 0 -- First 30 min: Smoke test MPP on mainnet
+### Milestone 0 -- First 30 min: MPP charges work
 
 | Task | Priority | Effort | Notes |
 |------|----------|--------|-------|
-| Fund agent wallet with USDC on Tempo mainnet | P0 | 10m | Bridge or faucet |
-| Hit `/api/kalshi-markets` from curl -- verify 402 response | P0 | 10m | Tests MPP server side |
-| Call from agent with `initMppClient()` -- verify auto-pay | P0 | 20m | Tests MPP client side end-to-end |
+| Set SERVICE_WALLET_ADDRESS in .env.local | P0 | 5m | Use your tempo wallet address |
+| `bun dev`, hit `/api/markets?q=test` -- verify 402 response | P0 | 10m | Tests MPP server side |
+| Call with `tempo request` -- verify payment + response | P0 | 15m | Tests end-to-end |
 
-### Milestone 1 -- 2hr mark: Access Key grant flow works
-
-| Task | Priority | Effort | Notes |
-|------|----------|--------|-------|
-| Add wagmi/viem wallet connector to UI | P0 | 45m | MetaMask, Tempo chain 4217 |
-| Build Access Key grant flow in UI | P0 | 1hr | User signs `KeyAuthorization`, tx sent via viem |
-| Poll `getRemainingLimit()` and show live in UI | P0 | 30m | `ACCOUNT_KEYCHAIN` precompile in `src/lib/tempo.ts` |
-| Verify limit depletes when agent spends USDC | P0 | 20m | Manual test: call an MPP service from agent |
-
-### Milestone 2 -- 4hr mark: Kalshi + Claude via MPP work
+### Milestone 1 -- 2hr mark: Kalshi auth + real data
 
 | Task | Priority | Effort | Notes |
 |------|----------|--------|-------|
-| Wire up Kalshi ECDSA auth in `src/lib/kalshi.ts` | P0 | 45m | P-256 signing, see [Kalshi auth docs](https://trading-api.readme.io/reference/authentication) |
-| Test `/api/kalshi-markets` returns real data behind MPP paywall | P0 | 20m | |
-| Test agent calls Claude via `anthropic.mpp.tempo.xyz` | P0 | 20m | No API key -- paid via Access Key |
-| Test full agent loop: Kalshi data + Claude eval, limit drains | P0 | 20m | Check on explore.tempo.xyz |
+| Implement Kalshi ECDSA P-256 auth in `src/lib/kalshi.ts` | P0 | 1hr | [Kalshi auth docs](https://trading-api.readme.io/reference/authentication) |
+| Test `/api/markets?q=bitcoin` returns real Kalshi data | P0 | 15m | |
+| Test `/api/market?ticker=...` returns single market | P0 | 15m | |
+| Test `/api/kalshi-markets` returns trending markets | P0 | 15m | |
 
-### Milestone 3 -- 5hr mark: Full end-to-end
-
-| Task | Priority | Effort | Notes |
-|------|----------|--------|-------|
-| Test Kalshi order execution on sandbox | P0 | 30m | `placeOrder()` in `src/lib/kalshi.ts` |
-| Full flow: intent -> 2 MPP calls -> order executed -> result shown | P0 | 30m | |
-
-### Milestone 4 -- 6hr mark: Polish for demo
+### Milestone 2 -- 3hr mark: Deploy + demo from CLI
 
 | Task | Priority | Effort | Notes |
 |------|----------|--------|-------|
-| Live spending meter animation in UI | P1 | 30m | SSE or polling every 2s |
-| Show step-by-step agent log in UI | P1 | 30m | Stream progress from `/api/agent` |
-| Error states and loading UX | P1 | 20m | |
+| Deploy to Railway or Vercel | P0 | 30m | |
+| Test `tempo request` against deployed URL | P0 | 15m | |
+| Write llms.txt for service discovery | P1 | 15m | So agents can self-discover endpoints |
 
-### Stretch Goals
+### Milestone 3 -- 4hr mark: Agent demo
 
 | Task | Priority | Effort | Notes |
 |------|----------|--------|-------|
-| Call Allium via MPP for token prices to cross-ref Kalshi | P2 | 30m | `agents.allium.so` -- real blockchain data |
-| Call Dune via MPP for on-chain analytics | P2 | 30m | `api.dune.com` -- SQL queries, more spending limit drain |
-| Multi-market scan: agent evaluates 3+ markets | P2 | 30m | Costs more USDC -- shows limit drain better |
-| Spending limit auto-refill request flow | P2 | 45m | Agent detects low budget, prompts user to top up |
-| MPP over MCP transport (native in mppx) | P2 | 1hr | Expose services as MCP tools with payments |
+| Demo: Claude (via `anthropic.mpp.tempo.xyz`) calls our service | P0 | 30m | Show agent-to-service flow |
+| Demo: multi-step -- agent searches markets, picks best, explains | P1 | 30m | |
+
+### Milestone 4 -- 5-6hr mark: Stretch
+
+| Task | Priority | Effort | Notes |
+|------|----------|--------|-------|
+| Add `/api/evaluate` -- Claude-powered market analysis (calls Claude via MPP internally) | P2 | 1hr | Service-calls-service pattern |
+| Polymarket integration as second data source | P2 | 1.5hr | Unified prediction market API |
+| Landing page polish (live endpoint tester) | P2 | 30m | |
+| Register on mpp.dev/services | P2 | 15m | If submission process exists |
 
 ---
 
 ## Key Docs
 
-- [MPP protocol](https://mpp.dev) -- Machine Payments Protocol
-- [mppx SDK](https://github.com/wevm/mppx) -- TypeScript SDK for MPP
-- [Tempo mainnet](https://docs.tempo.xyz/quickstart/connection-details) -- chain ID 4217, RPC
-- [Account Keychain spec](https://docs.tempo.xyz/protocol/transactions/AccountKeychain) -- Access Keys
-- [Predeployed contracts](https://docs.tempo.xyz/quickstart/predeployed-contracts) -- system contract addresses
-- [Kalshi API](https://trading-api.readme.io/reference/getting-started) -- market data + orders
+- [MPP protocol](https://mpp.dev)
+- [mppx SDK](https://github.com/wevm/mppx) -- TypeScript
+- [mpp-rs SDK](https://github.com/tempoxyz/mpp-rs) -- Rust
+- [Tempo mainnet](https://docs.tempo.xyz/quickstart/connection-details) -- chain ID 4217
+- [Kalshi API](https://trading-api.readme.io/reference/getting-started)
 
 ---
 
 ## Demo Script (2 min)
 
-1. "Here's the UI. I'm going to give an AI agent a $10 spending limit on Tempo -- not in a smart contract, baked into the protocol itself."
-2. Click **Approve 10 USDC** -> MetaMask prompt -> limit appears in UI
-3. Type intent: _"Bet 5 USDC on BTC above $90k by end of March"_
-4. Click **Run Agent** -> show step log:
-   - `-> Fetching Kalshi markets... paid 1 USDC (limit: 9.00)`
-   - `-> Evaluating trade via Claude on MPP... paid ~0.01 USDC (limit: 8.99)`
-   - `-> Order placed on Kalshi sandbox`
-5. "The agent spent $3 of its $10 budget autonomously. It cannot spend more than $10 -- not because we wrote a check in the app, but because Tempo's AccountKeychain precompile enforces it at the protocol level."
+1. "Prediction markets are one of the most useful data sources for AI agents, but there's no way for an agent to access them programmatically without API keys and accounts. I built the first prediction market service on the MPP marketplace."
+2. Show mpp.dev/services -- "50+ services, zero for prediction markets. Until now."
+3. `tempo request -t -X GET "https://HOST/api/markets?q=bitcoin"` -- show payment + response
+4. Show Claude calling the service via MPP: agent searches markets, picks the best bet, explains why.
+5. "Any agent in the ecosystem can now pay 10 cents to search prediction markets. No API keys. No accounts. Just USDC on Tempo."

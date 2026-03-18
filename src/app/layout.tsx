@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Agent Prepaid Card | Tempo x Kalshi",
-  description: "Give an AI agent a spending limit. Watch it spend.",
+  title: "Kalshi on MPP",
+  description: "Prediction market data for AI agents. Pay per request with USDC on Tempo.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
