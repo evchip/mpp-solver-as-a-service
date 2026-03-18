@@ -141,11 +141,16 @@ export async function buyShares(tokenId: string, usdcAmount: number): Promise<So
     side: "BUY",
   });
 
+  // CLOB returns { error, status } on failure, { orderID, success, ... } on success
+  if (order.error) {
+    throw new Error(`CLOB order failed: ${order.error}`);
+  }
+
   return {
     orderId: order.orderID ?? "unknown",
     status: order.status ?? "UNKNOWN",
     avgPrice: parseFloat(order.averagePrice ?? "0"),
-    filledSize: parseFloat(order.filledSize ?? "0"),
+    filledSize: parseFloat(order.takingAmount ?? order.filledSize ?? "0"),
     tokenId,
   };
 }

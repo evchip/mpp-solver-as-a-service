@@ -1,10 +1,5 @@
 // POST /api/buy-position
 // Solver: user pays on Tempo via MPP, solver buys CTF on Polymarket and transfers to user
-//
-// 1. MPP payment on Tempo (service fee)
-// 2. Solver places market order on Polymarket CLOB (Polygon)
-// 3. Solver transfers CTF tokens to user's Polygon address
-// 4. Returns Polygon tx hash as proof
 
 import { NextRequest } from "next/server";
 import { buyShares, transferCTF, getCTFBalance } from "@/lib/polymarket";
@@ -13,9 +8,9 @@ import { createMppServer } from "@/lib/mpp";
 const SERVICE_WALLET = process.env.SERVICE_WALLET_ADDRESS as `0x${string}`;
 
 export interface BuyPositionRequest {
-  token_id: string;          // Polymarket outcome token ID
-  amount_usd: number;        // how much to spend in USD
-  recipient_polygon: string; // user's Polygon address to receive CTF tokens
+  token_id: string;
+  amount_usd: number;
+  recipient_polygon: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -33,20 +28,29 @@ export async function POST(req: NextRequest) {
   }
 
   // Step 1: Buy shares on Polymarket CLOB
-  const fill = await buyShares(token_id, amount_usd);
-  if (!fill.filledSize || fill.filledSize === 0) {
+  let fill;
+  try {
+    fill = await buyShares(token_id, amount_usd);
+  } catch (err: any) {
     return payment.withReceipt(
-      Response.json({ error: "Order not filled", fill }, { status: 502 })
+      Response.json({ error: `Order failed: ${err.message}` }, { status: 502 })
     );
   }
 
-  // Step 2: Transfer CTF tokens to user's Polygon address
+  // Step 2: Wait briefly for CLOB settlement, then check balance
+  await new Promise((r) => setTimeout(r, 3000));
   const balance = await getCTFBalance(token_id);
-  const transferAmount = balance; // transfer all shares we just bought
 
+  if (balance === 0n) {
+    return payment.withReceipt(
+      Response.json({ error: "Order matched but no shares settled yet", fill }, { status: 502 })
+    );
+  }
+
+  // Step 3: Transfer CTF tokens to user's Polygon address
   const txHash = await transferCTF(
     token_id,
-    transferAmount,
+    balance,
     recipient_polygon as `0x${string}`
   );
 
@@ -55,13 +59,13 @@ export async function POST(req: NextRequest) {
     fill: {
       orderId: fill.orderId,
       avgPrice: fill.avgPrice,
-      shares: fill.filledSize,
+      shares: balance.toString(),
     },
     transfer: {
       polygon_tx: txHash,
+      polygon_explorer: `https://polygonscan.com/tx/${txHash}`,
       recipient: recipient_polygon,
       token_id,
-      shares: transferAmount.toString(),
       ctf_contract: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
     },
   }));
