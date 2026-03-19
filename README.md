@@ -1,197 +1,169 @@
-# Polymarket on MPP
+# Cross-Chain Polymarket Solver on MPP
 
-Search prediction markets and buy positions cross-chain. Pay USDC on Tempo, receive CTF tokens on Polygon. Every fill and transfer is verifiable on-chain.
+Cross-chain actions, not cross-chain tokens. Pay on Tempo, get a Polymarket position on Polygon. No bridging, no multi-chain wallet juggling. One API call, one payment.
 
----
+Settlement is cryptographic: the solver proves delivery with a merkle proof verified on-chain. No optimistic challenge period. The verification uses Alchemy via MPP. MPP all the way down.
 
-## Status (pre-hackathon)
+## Architecture
 
-**Working end-to-end:**
-- MPP data endpoint (search Polymarket markets, 0.10 USDC per call)
-- MPP solver (buy position on Polymarket CLOB + transfer CTF to user's Polygon address, 0.50 USDC)
-- CLOB auth (API key derivation via `@polymarket/clob-client`)
-- CTF ERC1155 transfer from solver to user's Polymarket Safe
-- Solver wallet funded and all 6 Polymarket approvals confirmed
+```mermaid
+sequenceDiagram
+    participant User as User<br/>(Tempo passkey wallet)
+    participant Escrow as PolymarketEscrow<br/>(Tempo)
+    participant Solver as Solver Service<br/>(MPP endpoint)
+    participant CLOB as Polymarket CLOB<br/>(Polygon)
+    participant Alchemy as Alchemy RPC<br/>(MPP service)
 
-**Remaining for hackathon day:**
-- Deploy to public URL
-- Escrow / cross-chain settlement proving (the interesting part)
-- Demo polish
+    User->>Escrow: deposit(orderId, amount, tokenId, recipientHash)
+    Note over Escrow: USDC locked until proof or expiry
 
----
+    User->>Solver: POST /api/buy-position {order_id, recipient_polygon}
+    Note over User,Solver: Pays $0.50 service fee via MPP
+
+    Solver->>Escrow: Read order (amount, tokenId, recipient)
+    Solver->>CLOB: Buy CTF shares (market order)
+    CLOB-->>Solver: Shares settled
+    Solver->>User: Transfer CTF to recipient on Polygon
+
+    Solver->>Alchemy: eth_getTransactionReceipt
+    Note over Solver,Alchemy: Pays $0.0001 via MPP
+    Alchemy-->>Solver: Receipt with TransferSingle event
+
+    Note over Solver: Verify: correct token, correct recipient
+    Note over Solver: Build merkle tree, compute root
+
+    Solver->>Escrow: commitRoot(batchIndex, root)
+    Note over Escrow: Root stored on-chain
+
+    Solver->>Escrow: claimWithProof(orderId, proof)
+    Note over Escrow: Verify merkle proof → release USDC to solver
+```
+
+```mermaid
+graph LR
+    subgraph Tempo Chain 4217
+        E[PolymarketEscrow]
+        V[WithdrawTrieVerifier]
+        E -->|verify proof| V
+    end
+
+    subgraph Polygon Chain 137
+        CTF[CTF ERC1155<br/>Polymarket]
+        CLOB[Polymarket CLOB]
+    end
+
+    subgraph Off-chain Service
+        API["/api/buy-position<br/>(MPP-gated)"]
+        MT[Merkle Tree Builder]
+        VER[Transfer Verifier]
+        API --> CLOB
+        API --> VER
+        VER --> MT
+        MT -->|commitRoot| E
+    end
+
+    API -->|safeTransferFrom| CTF
+    VER -->|eth_getTransactionReceipt| ALC[Alchemy MPP]
+```
+
+## Payment Model
+
+| Payment | What | Who pays | How | Amount |
+|---------|------|----------|-----|--------|
+| Position funds | USDC for CTF purchase | User | Escrow deposit (trustless) | Variable |
+| Service fee | Solver orchestration | User | MPP | $0.50 |
+| Verification | Polygon tx receipt | Solver | MPP (Alchemy) | $0.0001 |
+| Settlement | Solver claims from escrow | Escrow contract | On-chain merkle proof | 0 |
 
 ## Endpoints
 
 | Method | Path | Cost | Description |
 |--------|------|------|-------------|
-| GET | `/api/polymarket?q=bitcoin&limit=10` | 0.10 USDC | Search Polymarket markets |
-| GET | `/api/polymarket?condition_id=0x...` | 0.10 USDC | Get single market by condition ID |
-| POST | `/api/buy-position` | 0.50 USDC | Solver: pay on Tempo, receive CTF on Polygon |
+| GET | `/api/polymarket?q=bitcoin` | 0.10 USDC | Search Polymarket markets |
+| POST | `/api/buy-position` | 0.50 USDC | Buy position via escrow or direct |
+| GET | `/api/proof?orderId=0x...` | free | Merkle proof for escrow claim |
 
-### Buy position request
+## Contracts
 
-```json
-{
-  "token_id": "10526756807365906...",
-  "amount_usd": 5,
-  "recipient_polygon": "0x5BcfE51cb7fDA9cf2c91B1948916ff29bee72600"
-}
-```
+| Contract | Address | Chain |
+|----------|---------|-------|
+| PolymarketEscrow | `0x7331A38bAa80aa37d88D893Ad135283c34c40370` | Tempo (4217) |
+| CTF (Polymarket) | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` | Polygon (137) |
 
-Response includes Polygon tx hash for the CTF transfer + Polygonscan link.
+## Merkle Proof Format
 
-### How the solver works
+Same leaf format as t1's `T1XChainReader`:
 
 ```
-Tempo                        Polygon
-─────                        ───────
-User pays 0.50 USDC ─────>  Solver buys CTF on CLOB
-via MPP                      ↓
-                <──────────  Transfers CTF to user
-                             (verifiable tx hash returned)
+leaf = keccak256(abi.encodePacked(
+    keccak256(abi.encodePacked(orderId, polygonTxHash)),
+    orderId
+))
 ```
 
----
+The `WithdrawTrieVerifier` library (59 lines, from t1) verifies inclusion against the committed root using position-based binary merkle proofs.
 
 ## Quick Start
 
 ```bash
-# Already done: bun install, .env.local configured
-
+bun install
 bun dev
 
 # Search markets
 tempo request -t -X GET "http://localhost:3000/api/polymarket?q=bitcoin"
 
-# Buy a position (pay on Tempo, receive CTF on Polygon)
-tempo request -t -X POST --json '{
-  "token_id": "TOKEN_ID_FROM_SEARCH",
-  "amount_usd": 5,
-  "recipient_polygon": "0x5BcfE51cb7fDA9cf2c91B1948916ff29bee72600"
-}' "http://localhost:3000/api/buy-position"
-
-# Dry run (check cost without paying)
-tempo request -t --dry-run -X GET "http://localhost:3000/api/polymarket?q=bitcoin"
+# End-to-end escrow test (deposit → buy → prove → claim)
+bun run scripts/test-escrow.ts
 ```
 
-**Important:** VPN required (non-US, e.g. Netherlands) for CLOB order placement. Polymarket geoblocks US IPs.
+VPN required (non-US) for CLOB order placement. Polymarket geoblocks US IPs.
 
----
+## Accounts
 
-## Solver Wallet
+| Role | Address | Type |
+|------|---------|------|
+| User | `0xEF0726eBc08C1f89DEdF559163B7eC367C98C857` | Tempo passkey wallet |
+| User (scoped key) | `0x3Fec086381Ada1FdA646a3338739440f2F8276f9` | $100 spending cap, 30-day expiry |
+| Solver | `0xa0dF29753C297cf0975e55B6bE7516EbB9A94fA9` | EOA on Polygon + Tempo |
 
-| Field | Value |
-|-------|-------|
-| Address | `0xa0dF29753C297cf0975e55B6bE7516EbB9A94fA9` |
-| Chain | Polygon PoS |
-| Approvals | All 6 confirmed (3x USDC.e + 3x CTF ERC1155) |
-| CLOB API key | Auto-derived on first use via `createOrDeriveApiKey()` |
-
-### Useful scripts
-
-```bash
-# Check solver balances + approvals
-bun scripts/check-solver.ts 0xa0dF29753C297cf0975e55B6bE7516EbB9A94fA9
-
-# Re-run approvals if needed
-bun scripts/setup-solver.ts
-
-# Test CLOB auth + orderbook fetch
-bun scripts/test-clob.ts
-
-# Test a real buy order ($1 minimum, needs VPN)
-bun scripts/test-buy.ts
-
-# Transfer CTF to a recipient
-RECIPIENT=0x... bun scripts/test-transfer.ts
-```
-
----
-
-## Environment Variables
-
-Already configured in `.env.local`:
+## File Structure
 
 ```
-TEMPO_RPC_URL=https://rpc.tempo.xyz
-MPP_SECRET_KEY=<generated>
-SERVICE_WALLET_ADDRESS=0xef07...  (your tempo wallet)
-SOLVER_POLYGON_PRIVATE_KEY=0x17...
-SOLVER_POLYGON_ADDRESS=0xa0dF...
-POLYGON_RPC_URL=https://polygon-bor-rpc.publicnode.com
-```
-
----
-
-## Hackathon Day Plan
-
-All plumbing is done. Focus is on the hard/interesting problems:
-
-### Morning: Deploy + verify
-
-| Task | Effort | Notes |
-|------|--------|-------|
-| Deploy to Railway/Vercel | 30m | Public URL for demo |
-| Test from deployed URL with `tempo request` | 15m | |
-| Fix next.config.ts warning (serverExternalPackages) | 5m | |
-
-### Core: Escrow / Cross-Chain Proving
-
-| Task | Effort | Notes |
-|------|--------|-------|
-| Design escrow contract or proving scheme | 30m | See docs/future-gasless-onboarding.md |
-| Merkle proof: CTF Transfer event -> merkle tree -> root on Tempo | 1.5hr | You've built this before for t1 |
-| On-chain verification contract on Tempo | 1hr | Verify merkle proof of Polygon delivery |
-
-### Polish
-
-| Task | Effort | Notes |
-|------|--------|-------|
-| Agent demo: Claude via MPP searches markets, recommends, buys | 30m | |
-| Landing page with live endpoint tester | 30m | |
-
----
-
-## Architecture
-
-```
+contracts/
+  src/PolymarketEscrow.sol      Escrow + merkle proof verification
+  src/WithdrawTrieVerifier.sol   Binary merkle proof library (from t1)
 src/
-  lib/
-    tempo.ts          -- chain config (12 lines)
-    mpp.ts            -- MPP server setup (12 lines)
-    polymarket.ts     -- Gamma API + CLOB client + CTF transfer
-  app/
-    api/
-      polymarket/     -- GET: search markets (MPP-gated)
-      buy-position/   -- POST: solver endpoint (MPP-gated)
-    page.tsx          -- landing page
+  lib/fulfillment.ts             Merkle tree builder, root poster, transfer verification
+  lib/polymarket.ts              Gamma API, CLOB client, CTF transfer
+  app/api/buy-position/route.ts  MPP-gated solver (escrow + direct modes)
+  app/api/proof/route.ts         Proof retrieval
+  app/api/polymarket/route.ts    Market search
 scripts/
-  setup-solver.ts     -- one-time Polygon approvals
-  check-solver.ts     -- verify balances + approvals
-  test-clob.ts        -- test CLOB auth
-  test-buy.ts         -- test real order
-  test-transfer.ts    -- test CTF transfer
+  test-escrow.ts                 Full e2e test
 docs/
-  future-gasless-onboarding.md  -- ideas for trustless UX
+  demo-runbook.md                Step-by-step demo commands
+  tempo-developer-friction.md    DX issues for Tempo team
+  TODO.md                        Known gaps
 ```
 
----
+## Proven E2E Flow
 
-## Key Docs
+Tested on Tempo mainnet + Polygon mainnet, 2026-03-18:
 
-- [MPP](https://mpp.dev) / [mppx](https://github.com/wevm/mppx)
-- [Tempo mainnet](https://docs.tempo.xyz) -- chain ID 4217
-- [Polymarket CLOB](https://docs.polymarket.com)
-- [Polymarket Gamma API](https://gamma-api.polymarket.com) -- market data (public)
-- [CTF / Gnosis Conditional Tokens](https://docs.gnosis.io/conditionaltokens/) -- ERC1155
+| Step | Tx |
+|------|----|
+| Escrow deposit | Tempo |
+| CTF purchase | Polymarket CLOB order `0x3820...` |
+| CTF transfer | [Polygon `0x9896...`](https://polygonscan.com/tx/0x9896ada0ea4ba45d7cf10cc2b699f5e307ca63635438627806fa574690d57b5e) |
+| Root committed | Tempo (batch 1, root `0x5258...`) |
+| Claim with proof | Tempo (order settled ✓) |
 
----
+## Future Work
 
-## Demo Script (2 min)
+Full position lifecycle management. The solver watches the position and sells at a target price, transferring proceeds back to the user on Tempo. Make money on a foreign chain without ever touching it.
 
-1. "Prediction markets are one of the most useful data sources for AI -- but an agent can't buy a position today. The market is on Polygon, the agent's wallet is on Tempo, and there's no bridge for intent execution."
-2. `tempo request -t -X GET "https://HOST/api/polymarket?q=bitcoin"` -- show data + payment
-3. "Now the interesting part. I want to buy a YES position. I'm paying on Tempo. The position is on Polygon."
-4. `tempo request -t -X POST --json '{"token_id":"...","amount_usd":5,"recipient_polygon":"0x5BcfE51cb7fDA9cf2c91B1948916ff29bee72600"}' "https://HOST/api/buy-position"`
-5. Show CTF tokens arriving in Polymarket portfolio. Show the Polygonscan tx link.
-6. "Every step is verifiable on-chain. Today the solver is trusted. When Tempo ships the enshrined escrow precompile that Georgios mentioned, this becomes trustless -- the solver posts a merkle proof of the CTF transfer, verified on Tempo. I've built this exact proof system before."
+LLM-powered market discovery. An agent searches markets, evaluates liquidity and pricing, and constructs the deposit intent for the user to sign. The agent uses MPP to search, MPP to fill, and MPP to verify.
+
+## Developer Friction
+
+See [tempo-developer-friction.md](docs/tempo-developer-friction.md) for issues encountered building on Tempo, including viem transaction support, foundry deployment, and Alchemy MPP auth.

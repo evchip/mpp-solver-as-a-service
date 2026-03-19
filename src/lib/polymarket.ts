@@ -138,7 +138,7 @@ export async function buyShares(tokenId: string, usdcAmount: number): Promise<So
   const order = await client.createAndPostMarketOrder({
     tokenID: tokenId,
     amount: usdcAmount,
-    side: "BUY",
+    side: "BUY" as any,
   });
 
   // CLOB returns { error, status } on failure, { orderID, success, ... } on success
