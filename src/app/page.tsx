@@ -15,85 +15,111 @@ export default function Home() {
           <FlowStep
             number={1}
             chain="Tempo"
-            title="User deposits USDC into escrow"
-            detail="Funds are locked on-chain. Refundable if the solver doesn't fill by the deadline."
-            color="#3b82f6"
+            title="Ask the advisor"
+            detail="POST /api/advisor with a search query. Claude (via Anthropic MPP) analyzes markets and returns a trade recommendation with ready-to-paste CLI commands."
+            color="#10b981"
           />
           <Connector />
           <FlowStep
             number={2}
             chain="Tempo"
-            title="User calls the solver via MPP"
-            detail="Pays a $0.50 service fee. Passes the escrow order ID and their Polygon address."
+            title="Deposit USDC into escrow"
+            detail="Lock your position funds on-chain. Refundable if the solver doesn't fill by the deadline."
             color="#3b82f6"
           />
           <Connector />
           <FlowStep
             number={3}
-            chain="Polygon"
-            title="Solver buys CTF on Polymarket"
-            detail="Places a market order on the Polymarket CLOB. Waits for settlement."
-            color="#8b5cf6"
-          />
-          <Connector />
-          <FlowStep
-            number={4}
-            chain="Polygon"
-            title="Solver transfers CTF to user"
-            detail="ERC1155 transfer to the user's Polygon address. Verifiable on Polygonscan."
-            color="#8b5cf6"
-          />
-          <Connector />
-          <FlowStep
-            number={5}
-            chain="Polygon → Tempo"
-            title="Solver proves delivery"
-            detail="Verifies the Polygon transfer, appends to a merkle tree, posts the root on Tempo."
+            chain="Tempo → Polygon"
+            title="Solver fills the order"
+            detail="One API call. The solver buys CTF on Polymarket, transfers to your Polygon address, verifies the transfer, builds a merkle proof, posts the root on-chain, and claims from escrow. Full settlement."
             color="#f59e0b"
-          />
-          <Connector />
-          <FlowStep
-            number={6}
-            chain="Tempo"
-            title="Solver claims from escrow"
-            detail="Submits a merkle proof on-chain. Escrow verifies and releases USDC to the solver."
-            color="#3b82f6"
           />
         </div>
       </section>
 
       <section style={{ marginBottom: 40 }}>
-        <pre style={{ background: "#111", padding: 20, borderRadius: 8, fontSize: 11, overflow: "auto", color: "#999", lineHeight: 1.6 }}>
-{`  User (Tempo)                Solver Service              Polygon
-  ───────────                 ──────────────              ───────
-       │                            │                        │
-       │  deposit(USDC)             │                        │
-       ├───────────► Escrow         │                        │
-       │             (locked)       │                        │
-       │                            │                        │
-       │  POST /api/buy-position    │                        │
-       ├────────────────────────────►                        │
-       │     (pays $0.50 via MPP)   │                        │
-       │                            │  buy on CLOB           │
-       │                            ├───────────────────────►│
-       │                            │                        │
-       │                            │  transfer CTF to user  │
-       │                            ├───────────────────────►│
-       │                            │                        │
-       │                            │  verify tx receipt     │
-       │                            ├── ── ── ── ── ── ── ─►│
-       │                            │                        │
-       │                            │  build merkle tree     │
-       │                            │  post root to escrow   │
-       │                            ├───────────► Escrow     │
-       │                            │             (root)     │
-       │                            │                        │
-       │                            │  claimWithProof()      │
-       │                            ├───────────► Escrow     │
-       │                            │         verify proof   │
-       │                            │◄──────── USDC released │
-       │                            │                        │`}
-        </pre>
+        <h2 style={{ fontSize: 16, color: "#fff", marginBottom: 12 }}>Quick start</h2>
+        <div style={{ background: "#111", borderRadius: 8, padding: 16, fontSize: 13, lineHeight: 1.8 }}>
+          <p style={{ color: "#999", margin: "0 0 12px 0" }}>
+            <strong style={{ color: "#ccc" }}>Prerequisites:</strong>{" "}
+            <a href="https://docs.tempo.xyz" target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", textDecoration: "none" }}>Tempo CLI</a> installed,{" "}
+            <a href="https://book.getfoundry.sh" target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", textDecoration: "none" }}>Foundry (cast)</a> installed,{" "}
+            funded Tempo passkey wallet (<code style={{ color: "#ccc" }}>tempo wallet login</code>).
+          </p>
+          <Step n={1} title="Get a recommendation">
+{`tempo request -X POST --json '{"query":"bitcoin","budget_usd":5}' \\
+  https://solverasaservice-production.up.railway.app/api/advisor`}
+          </Step>
+          <Step n={2} title="Execute the commands">
+{`# Paste the full advisor response to your LLM (Claude Code, Cursor, etc.)
+# and ask it to execute the next_steps commands.
+# Or run them manually — they're ready to copy-paste.`}
+          </Step>
+          <Step n={3} title="Done">
+{`# Your position appears in your Polygon wallet.
+# If you used your Polymarket Safe address, it shows in the Polymarket UI.`}
+          </Step>
+        </div>
+      </section>
+
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontSize: 16, color: "#fff", marginBottom: 12 }}>Important</h2>
+        <div style={{ background: "#1a1a2e", border: "1px solid #2a2a4e", borderRadius: 8, padding: 16, fontSize: 13, lineHeight: 1.7 }}>
+          <ul style={{ color: "#999", margin: 0, paddingLeft: 16 }}>
+            <li style={{ marginBottom: 8 }}>
+              <strong style={{ color: "#f59e0b" }}>Use your Polymarket Safe address</strong> as the recipient if you want the position to appear in the Polymarket UI. Find it at{" "}
+              <a href="https://polymarket.com/portfolio" target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", textDecoration: "none" }}>polymarket.com/portfolio</a>.
+            </li>
+            <li style={{ marginBottom: 8 }}>
+              <strong style={{ color: "#f59e0b" }}>Keep amounts small</strong> ($1-5 USDC). The solver has limited liquidity. Large orders may fail.
+            </li>
+            <li style={{ marginBottom: 8 }}>
+              <strong style={{ color: "#f59e0b" }}>If the solver doesn't fill your order</strong>, your funds are safe. After the deadline (1 hour), call <code style={{ color: "#ccc" }}>refund(orderId)</code> on the{" "}
+              <a href="https://explore.tempo.xyz/address/0x7331A38bAa80aa37d88D893Ad135283c34c40370" target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", textDecoration: "none" }}>escrow contract</a>{" "}
+              to get your USDC back.
+            </li>
+            <li>
+              <strong style={{ color: "#f59e0b" }}>Refund command:</strong>
+              <pre style={{ background: "#111", padding: 8, borderRadius: 4, fontSize: 11, marginTop: 4, overflow: "auto" }}>
+{`cast send --rpc-url https://rpc.tempo.xyz \\
+  --tempo.access-key $USER_KEY \\
+  --tempo.root-account $USER_WALLET \\
+  --tempo.fee-token 0x20c000000000000000000000b9537d11c60e8b50 \\
+  0x7331A38bAa80aa37d88D893Ad135283c34c40370 \\
+  "refund(bytes32)" $ORDER_ID`}
+              </pre>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontSize: 16, color: "#fff", marginBottom: 12 }}>API</h2>
+        <Endpoint
+          method="GET"
+          path="/api/polymarket?q=bitcoin"
+          cost="0.10"
+          description="Search Polymarket markets. Returns token IDs, prices, liquidity."
+        />
+        <Endpoint
+          method="POST"
+          path="/api/advisor"
+          cost="0.25"
+          description="LLM market advisor. Claude analyzes markets via Anthropic MPP and recommends trades with deposit params and CLI commands."
+        />
+        <Endpoint
+          method="POST"
+          path="/api/buy-position"
+          cost="0.50"
+          description="Fill an escrow order. Buys CTF, transfers to user, verifies, proves, settles. One call does everything."
+        />
+        <Endpoint
+          method="GET"
+          path="/api/proof?orderId=0x..."
+          cost="free"
+          description="Merkle proof for a fulfilled order."
+        />
       </section>
 
       <section style={{ marginBottom: 40 }}>
@@ -135,47 +161,19 @@ export default function Home() {
       </section>
 
       <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontSize: 16, color: "#fff", marginBottom: 12 }}>API</h2>
-        <Endpoint
-          method="GET"
-          path="/api/polymarket?q=bitcoin"
-          cost="0.10"
-          description="Search Polymarket markets. Returns token IDs, prices, liquidity."
-        />
-        <Endpoint
-          method="POST"
-          path="/api/advisor"
-          cost="0.25"
-          description="LLM market advisor. Claude analyzes markets via Anthropic MPP and recommends trades with deposit params."
-        />
-        <Endpoint
-          method="POST"
-          path="/api/buy-position"
-          cost="0.50"
-          description="Fill an escrow order. Buys CTF, transfers to user, proves delivery, posts root."
-        />
-        <Endpoint
-          method="GET"
-          path="/api/proof?orderId=0x..."
-          cost="free"
-          description="Retrieve the merkle proof for an escrow claim."
-        />
-      </section>
-
-      <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontSize: 16, color: "#fff", marginBottom: 12 }}>Contracts</h2>
         <div style={{ background: "#111", borderRadius: 8, padding: 16, fontSize: 13 }}>
           <ContractRow
             label="PolymarketEscrow"
             address="0x7331A38bAa80aa37d88D893Ad135283c34c40370"
             explorer="https://explore.tempo.xyz/address/0x7331A38bAa80aa37d88D893Ad135283c34c40370"
-            chain="Tempo"
+            chain="Tempo (4217)"
           />
           <ContractRow
             label="CTF (Polymarket)"
             address="0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
             explorer="https://polygonscan.com/address/0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
-            chain="Polygon"
+            chain="Polygon (137)"
           />
         </div>
       </section>
@@ -227,6 +225,19 @@ function FlowStep({ number, chain, title, detail, color }: {
 function Connector() {
   return (
     <div style={{ marginLeft: 13, width: 2, height: 16, background: "#333" }} />
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: string }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ color: "#ccc", fontSize: 13, marginBottom: 4 }}>
+        <span style={{ color: "#f59e0b" }}>{n}.</span> {title}
+      </div>
+      <pre style={{ background: "#0a0a0a", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto", margin: 0 }}>
+        {children}
+      </pre>
+    </div>
   );
 }
 
