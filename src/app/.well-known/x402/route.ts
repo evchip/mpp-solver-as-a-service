@@ -8,12 +8,11 @@ export async function GET() {
 
   return Response.json({
     version: 1,
-    openapi: `${baseUrl}/openapi.json`,
     resources: [
-      { url: `${baseUrl}/api/polymarket`, method: "GET", price: "0.10", currency: "USDC" },
-      { url: `${baseUrl}/api/advisor`, method: "POST", price: "0.25", currency: "USDC" },
-      { url: `${baseUrl}/api/buy-position`, method: "POST", price: "0.50", currency: "USDC" },
-      { url: `${baseUrl}/api/proof`, method: "GET", price: "0", currency: "USDC" },
+      `${baseUrl}/api/polymarket`,
+      `${baseUrl}/api/advisor`,
+      `${baseUrl}/api/buy-position`,
+      `${baseUrl}/api/proof`,
     ],
     mppResources: [
       `${baseUrl}/api/polymarket`,
