@@ -208,9 +208,6 @@ export async function GET() {
           operationId: "getProof",
           summary: "Get merkle proof for escrow settlement",
           tags: ["Proof"],
-          "x-payment-info": {
-            authMode: "none",
-          },
           parameters: [
             {
               name: "orderId",
