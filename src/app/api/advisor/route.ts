@@ -149,7 +149,7 @@ Respond with ONLY valid JSON, no markdown:
       solver,
       usdc,
     },
-    how_to_execute: "Paste this entire JSON response to your LLM (Claude Code, Cursor, etc.) and ask it to execute the next_steps commands. It will handle variable substitution, signing, and sequencing. You just need tempo CLI and cast installed, and a funded Tempo passkey wallet (tempo wallet login).",
+    how_to_execute: "Paste this entire JSON response to your LLM (Claude Code, Cursor, etc.) and ask it to execute the next_steps commands. It will handle variable substitution, signing, and sequencing. You just need tempo CLI and cast installed, and a funded Tempo passkey wallet (tempo wallet login). For RECIPIENT, use your Polymarket Safe address (starts with 0x, visible at polymarket.com/portfolio) if you want the position to appear in the Polymarket UI.",
     next_steps: [
       `# 1. Set variables (pulls key from your logged-in tempo wallet)`,
       `export USER_KEY=$(tempo wallet whoami -j | jq -r '.key.key')`,
