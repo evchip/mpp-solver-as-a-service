@@ -4,10 +4,27 @@ export default function Home() {
   return (
     <main style={{ maxWidth: 680, margin: "60px auto", padding: "0 24px", color: "#e0e0e0" }}>
       <h1 style={{ fontSize: 28, marginBottom: 4, color: "#fff" }}>Act on any chain. Pay on one.</h1>
-      <p style={{ color: "#888", marginBottom: 40, fontSize: 15 }}>
+      <p style={{ color: "#888", marginBottom: 20, fontSize: 15 }}>
         Buy prediction market positions cross-chain. Pay on Tempo, receive on Polygon.
         No bridging. No multi-chain wallet. One API call.
       </p>
+
+      <div style={{ background: "#111", borderRadius: 8, padding: 16, marginBottom: 40, fontSize: 13 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ color: "#fff", fontWeight: 600 }}>Install on your agent</span>
+          <a
+            href="https://www.mppscan.com/server/dd88037a9ad0e4894716f361aba3282828a3ab7184fd8374ab254cbca92b08df"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#3b82f6", fontSize: 11, textDecoration: "none" }}
+          >
+            view on mppscan
+          </a>
+        </div>
+        <CopyBlock>
+{`npx agentcash add https://solverasaservice-production.up.railway.app`}
+        </CopyBlock>
+      </div>
 
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontSize: 16, color: "#fff", marginBottom: 16 }}>How it works</h2>
