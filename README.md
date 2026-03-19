@@ -4,7 +4,7 @@ An MPP service that executes cross-chain intents with cryptographic settlement.
 
 ## The Problem
 
-Buying a prediction market position today means bridging tokens, connecting to the right chain, interacting with the protocol directly, and managing wallets across networks. An agent can't do this. A user shouldn't have to.
+Buying a prediction market position today means bridging tokens, connecting to the right chain, interacting with the protocol directly, and managing wallets across networks. That sucks.
 
 ## The Solution
 
