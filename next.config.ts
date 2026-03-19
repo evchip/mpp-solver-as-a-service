@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
         source: "/.well-known/openapi.json",
         destination: "/openapi.json",
       },
+      {
+        source: "/.well-known/x402",
+        destination: "/openapi.json",
+      },
     ];
   },
 };
