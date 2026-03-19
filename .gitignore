@@ -9,3 +9,6 @@ contracts/broadcast/
 contracts/lib/
 tsconfig.tsbuildinfo
 .env.old
+
+docs/
+.claude/
