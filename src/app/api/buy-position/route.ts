@@ -33,12 +33,14 @@ export async function POST(req: NextRequest) {
 
   const body: BuyPositionRequest = await req.json();
 
-  if (body.order_id) {
-    const result = await handleEscrowOrder(body);
-    return payment.withReceipt(result);
+  if (!body.order_id) {
+    return payment.withReceipt(
+      Response.json({ error: "order_id required. Deposit into escrow first, then call with your order_id." }, { status: 400 })
+    );
   }
 
-  return payment.withReceipt(await handleDirectOrder(body));
+  const result = await handleEscrowOrder(body);
+  return payment.withReceipt(result);
 }
 
 async function handleDirectOrder(body: BuyPositionRequest) {
