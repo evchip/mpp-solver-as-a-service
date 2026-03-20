@@ -1,0 +1,131 @@
+# Solver as a Service
+
+> Cross-chain prediction market solver on MPP. Pay on Tempo, get a Polymarket position on Polygon.
+
+Base URL: https://solverasaservice-production.up.railway.app
+
+## Overview
+
+This service lets you buy prediction market positions on Polymarket (Polygon) by paying on Tempo. The solver handles the cross-chain execution: buying shares, transferring them to your address, proving delivery with a merkle proof, and settling from escrow.
+
+All paid endpoints use MPP (Machine Payments Protocol). Send a request, receive a 402 challenge, pay via Tempo wallet, receive the response.
+
+## Prerequisites
+
+- Tempo CLI installed (`tempoup`)
+- Tempo wallet logged in (`tempo wallet login`)
+- Foundry cast installed (for escrow deposit step)
+- jq installed (for parsing wallet info)
+
+## Endpoints
+
+### GET /api/polymarket - Search Markets ($0.10)
+
+Search Polymarket prediction markets by keyword.
+
+```
+tempo request -X GET "https://solverasaservice-production.up.railway.app/api/polymarket?q=bitcoin"
+```
+
+Parameters: `q` (search query), `limit` (max results, default 10)
+
+Returns: Array of markets with `question`, `yesTokenId`, `noTokenId`, `yesPrice`, `noPrice`, `volume`, `liquidity`.
+
+### POST /api/advisor - Trade Recommendation ($0.25)
+
+LLM-powered market advisor. Uses Claude via Anthropic MPP to analyze markets and recommend the best trade.
+
+```
+tempo request -X POST --json '{"query":"bitcoin","budget_usd":5}' https://solverasaservice-production.up.railway.app/api/advisor
+```
+
+Input:
+```json
+{"query": "string (required)", "budget_usd": "number (default 5)"}
+```
+
+Returns: Trade recommendation with `deposit_params` (token_id, token_bytes32, amount_raw, escrow address, solver address, USDC address) and `next_steps` (ready-to-execute CLI commands for deposit and fill).
+
+The `next_steps` array contains shell commands. Execute them in order in the same terminal session.
+
+### POST /api/buy-position - Fill Order ($0.50)
+
+Fill an escrow order. Requires the user to have deposited into the escrow contract first. The solver buys CTF on Polymarket, transfers to the user's Polygon address, verifies the transfer, builds a merkle proof, posts the root on-chain, and claims from escrow. Full settlement in one call.
+
+```
+tempo request -X POST --json '{"order_id":"0x...","recipient_polygon":"0x..."}' https://solverasaservice-production.up.railway.app/api/buy-position
+```
+
+Input:
+```json
+{"order_id": "bytes32 hex (required)", "recipient_polygon": "Polygon address (required)"}
+```
+
+The `order_id` must correspond to a deposit in the escrow contract on Tempo. If no deposit exists, the request is rejected.
+
+### GET /api/proof - Get Merkle Proof (free)
+
+Retrieve the merkle proof for a fulfilled order. Used for manual escrow claims (settlement is normally automatic).
+
+```
+curl "https://solverasaservice-production.up.railway.app/api/proof?orderId=0x..."
+```
+
+## Full Flow
+
+### Step 1: Get a recommendation
+
+```bash
+tempo request -X POST --json '{"query":"bitcoin","budget_usd":5}' https://solverasaservice-production.up.railway.app/api/advisor
+```
+
+### Step 2: Set variables from the response
+
+```bash
+export USER_KEY=$(tempo wallet whoami -j | jq -r '.key.key')
+export USER_WALLET=$(tempo wallet whoami -j | jq -r '.wallet')
+export ORDER_ID=$(cast keccak "order-$(date +%s)")
+echo $ORDER_ID
+export RECIPIENT=<user's Polygon address, use Polymarket Safe address for positions to show in Polymarket UI>
+RECIPIENT_HASH=$(cast keccak $RECIPIENT)
+DEADLINE=$(($(date +%s) + 3600))
+```
+
+Use the `deposit_params` from the advisor response for TOKEN_BYTES and AMOUNT.
+
+### Step 3: Approve and deposit into escrow
+
+```bash
+# Approve USDC
+cast send --rpc-url https://rpc.tempo.xyz --tempo.access-key $USER_KEY --tempo.root-account $USER_WALLET --tempo.fee-token 0x20c000000000000000000000b9537d11c60e8b50 0x20c000000000000000000000b9537d11c60e8b50 "approve(address,uint256)" 0x7331A38bAa80aa37d88D893Ad135283c34c40370 $AMOUNT
+
+# Deposit
+cast send --rpc-url https://rpc.tempo.xyz --tempo.access-key $USER_KEY --tempo.root-account $USER_WALLET --tempo.fee-token 0x20c000000000000000000000b9537d11c60e8b50 0x7331A38bAa80aa37d88D893Ad135283c34c40370 "deposit(bytes32,address,uint256,bytes32,bytes32,uint256)" $ORDER_ID 0x827355Ca21cC462D0F268b52Bff0df665db8Db75 $AMOUNT $TOKEN_BYTES $RECIPIENT_HASH $DEADLINE
+```
+
+### Step 4: Call the solver
+
+```bash
+tempo request -X POST --json "{\"order_id\":\"$ORDER_ID\",\"recipient_polygon\":\"$RECIPIENT\"}" https://solverasaservice-production.up.railway.app/api/buy-position
+```
+
+The solver fills the order, transfers CTF to your Polygon address, verifies delivery, posts a merkle proof on Tempo, and claims from escrow. Done.
+
+### Refund (if solver doesn't fill within deadline)
+
+```bash
+cast send --rpc-url https://rpc.tempo.xyz --tempo.access-key $USER_KEY --tempo.root-account $USER_WALLET --tempo.fee-token 0x20c000000000000000000000b9537d11c60e8b50 0x7331A38bAa80aa37d88D893Ad135283c34c40370 "refund(bytes32)" $ORDER_ID
+```
+
+## Contracts
+
+- Escrow: 0x7331A38bAa80aa37d88D893Ad135283c34c40370 (Tempo, chain 4217)
+- USDC: 0x20c000000000000000000000b9537d11c60e8b50 (Tempo)
+- Solver: 0x827355Ca21cC462D0F268b52Bff0df665db8Db75
+- CTF (Polymarket): 0x4D97DCd97eC945f40cF65F87097ACe5EA0476045 (Polygon, chain 137)
+
+## Important
+
+- Use your Polymarket Safe address as the recipient so positions show in the Polymarket UI (find it at polymarket.com/portfolio)
+- Keep amounts small ($1-5 USDC) - the solver has limited liquidity
+- Deposits are refundable after the deadline (1 hour) if the solver doesn't fill
