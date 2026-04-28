@@ -9,7 +9,7 @@ export function createMppServer(recipientAddress: `0x${string}`) {
     const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY!)
     return Mppx.create({
       methods: [
-        tempo({ currency: USDC, recipient: recipientAddress }),
+        // tempo({ currency: USDC, recipient: recipientAddress }),
         stripe.charge({
           client: stripeClient,
           networkId: process.env.STRIPE_NETWORK_ID!,
