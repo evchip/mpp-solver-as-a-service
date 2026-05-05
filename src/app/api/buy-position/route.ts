@@ -26,6 +26,7 @@ import {
   buildAndPostRoot,
   verifyPolygonTransfer,
 } from "@/lib/fulfillment"
+import { Narrowed } from "../polymarket/route"
 
 const SERVICE_WALLET = process.env.SERVICE_WALLET_ADDRESS as `0x${string}`
 const USDC_DECIMALS = 6
@@ -40,11 +41,10 @@ export interface BuyPositionRequest {
 export async function POST(req: NextRequest) {
   // MPP charge on every request (service fee)
   const mpp = await createMppServer(SERVICE_WALLET)
-  const payment = await mpp.charge({
-    amount: "0.50",
-    currency: "usd",
-    decimals: 2,
-  })(req)
+  const payment = await mpp.compose(
+    ["tempo/charge", { amount: "0.50" }],
+    ["stripe/charge", { amount: "0.50" }],
+  )(req);
   if (payment.status === 402) return payment.challenge
 
   const body: BuyPositionRequest = await req.json()

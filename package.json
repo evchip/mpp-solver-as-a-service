@@ -10,7 +10,8 @@
   "dependencies": {
     "@polymarket/clob-client": "5.8.1",
     "merkletreejs": "0.6.0",
-    "mppx": "0.6.5",
+    "mpp-card": "^0.1.8",
+    "mppx": "^0.6.15",
     "next": "15.5.15",
     "react": "19.2.5",
     "react-dom": "19.2.5",

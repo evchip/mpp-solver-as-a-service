@@ -12,6 +12,7 @@ import { type Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { createMppServer } from "@/lib/mpp"
 import { searchMarkets, type ParsedMarket } from "@/lib/polymarket"
+import { Narrowed } from "../polymarket/route"
 
 const SERVICE_WALLET = process.env.SERVICE_WALLET_ADDRESS as `0x${string}`
 const ANTHROPIC_MPP_URL = "https://anthropic.mpp.tempo.xyz/v1/messages"
@@ -37,11 +38,10 @@ async function getMppClient() {
 
 export async function POST(req: NextRequest) {
   const mpp = await createMppServer(SERVICE_WALLET)
-  const payment = await mpp.charge({
-    amount: "0.25",
-    currency: "usd",
-    decimals: 2,
-  })(req)
+  const payment = await mpp.compose(
+    ["tempo/charge", { amount: "0.25" }],
+    ["stripe/charge", { amount: "0.25" }],
+  )(req)
   if (payment.status === 402) return payment.challenge
 
   const body = await req.json()

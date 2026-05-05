@@ -9,13 +9,16 @@ import { createMppServer } from "@/lib/mpp"
 
 const SERVICE_WALLET = process.env.SERVICE_WALLET_ADDRESS as `0x${string}`
 
+export type Narrowed =
+  | { status: 402; challenge: Response }
+  | { status: 200; withReceipt: (r: Response) => Response }
+
 export async function GET(req: NextRequest) {
   const mpp = await createMppServer(SERVICE_WALLET)
-  const payment = await mpp.charge({
-    amount: "0.10",
-    currency: "usd",
-    decimals: 2,
-  })(req)
+  const payment = await mpp.compose(
+    ["tempo/charge", { amount: "0.50" }],
+    ["stripe/charge", { amount: "0.50" }],
+  )(req)
   if (payment.status === 402) return payment.challenge
 
   const conditionId = req.nextUrl.searchParams.get("condition_id")
